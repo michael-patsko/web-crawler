@@ -27,10 +27,10 @@ public class WebCrawler {
 
         urlsToVisit.add(startUrl);
 
-        while (!urlsToVisit.isEmpty()) {
+//        while (!urlsToVisit.isEmpty()) {
             var urlToVisit = urlsToVisit.poll();
             if (visitedUrls.contains(urlToVisit)) {
-                continue;
+//                continue;
             }
 
             System.out.println("Visiting URL: " + urlToVisit);
@@ -42,18 +42,31 @@ public class WebCrawler {
                 var linkElements = document.select("a[href]");
 
                 linkElements.forEach(link -> {
-                    var url = normalizeUrl(link.absUrl("href"));
-                    System.out.println(url);
+                    var url = link.absUrl("href");
+                    var normalizedUrl = normalizeUrl(url);
+
+                    if (hasRootDomain(url) && !urlsToVisit.contains(normalizedUrl)) {
+                        System.out.println(normalizedUrl);
+                        urlsToVisit.add(normalizedUrl);
+                    }
                 });
             } catch (Exception e) {
                 // swallow error for now
             }
-        }
+//        }
+    }
+
+    private Boolean hasRootDomain(String url) {
+        return URI.create(url).getHost().equals(rootDomain);
     }
 
     private String normalizeUrl (String url) {
         var uri = URI.create(url);
-        return uri.getAuthority() + uri.getPath();
-        // We aren't interested in scheme or fragment
+        var scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "http://";
+        var path = uri.getPath() == null || uri.getPath().isEmpty() ? "/" : uri.getPath().toLowerCase();
+
+
+        return scheme + uri.getAuthority() + path;
+        // We aren't interested in fragment
     }
 }
