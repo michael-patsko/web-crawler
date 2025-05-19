@@ -3,6 +3,7 @@ package uk.co.exercise.webcrawler;
 import org.jsoup.Jsoup;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.Set;
@@ -16,21 +17,26 @@ public class WebCrawler {
     private final LinkedList<String> urlsToVisit = new LinkedList<>();
     private final Set<String> visitedUrls = new HashSet<>();
 
+    private final Boolean debugMode = true;
+
     public WebCrawler(String startUrl) {
         this.startUrl = startUrl;
         this.rootDomain = URI.create(startUrl).getHost();
     }
 
     public void crawl() {
-        System.out.println("\nWebCrawler\n");
         System.out.println("Crawling URL: " + startUrl);
+
+        // TODO: Should normalize first
 
         urlsToVisit.add(startUrl);
 
-//        while (!urlsToVisit.isEmpty()) {
+        while (!urlsToVisit.isEmpty()) {
             var urlToVisit = urlsToVisit.poll();
+
+            // This shouldn't happen, as we check before adding a new URL to visit, but *just in case*!
             if (visitedUrls.contains(urlToVisit)) {
-//                continue;
+                continue;
             }
 
             System.out.println("Visiting URL: " + urlToVisit);
@@ -43,30 +49,51 @@ public class WebCrawler {
 
                 linkElements.forEach(link -> {
                     var url = link.absUrl("href");
-                    var normalizedUrl = normalizeUrl(url);
 
-                    if (hasRootDomain(url) && !urlsToVisit.contains(normalizedUrl)) {
-                        System.out.println(normalizedUrl);
-                        urlsToVisit.add(normalizedUrl);
+                    try {
+                        var normalizedUrl = normalizeUrl(url);
+
+                        if (hasRootDomain(url) && !urlsToVisit.contains(normalizedUrl)) {
+                            System.out.println(normalizedUrl);
+                            urlsToVisit.add(normalizedUrl);
+                        }
+                    } catch (URISyntaxException e) {
+                        System.out.println("Oops!");
                     }
+
                 });
             } catch (Exception e) {
-                // swallow error for now
+                // TODO: swallow error for now
             }
-//        }
+
+            // Force only one iteration of while loop, for debugging purposes
+            if (debugMode) {
+                break;
+            }
+        }
     }
 
     private Boolean hasRootDomain(String url) {
         return URI.create(url).getHost().equals(rootDomain);
     }
 
-    private String normalizeUrl (String url) {
+    private String normalizeUrl(String url) throws URISyntaxException {
         var uri = URI.create(url);
-        var scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "http://";
-        var path = uri.getPath() == null || uri.getPath().isEmpty() ? "/" : uri.getPath().toLowerCase();
 
+        var scheme = uri.getScheme();
+        if (scheme == null) {
+            scheme = "http";
+        }
 
-        return scheme + uri.getAuthority() + path;
-        // We aren't interested in fragment
+        // Prevents treating example.com and example.com/ as two different URLs
+        var path = uri.getPath();
+        if (path == null || path.isEmpty()) {
+            path = "/";
+        }
+
+        var normalizedUri = new URI(scheme, uri.getAuthority(), path, null, null);
+        // We aren't interested in fragment or query
+
+        return normalizedUri.toString();
     }
 }
