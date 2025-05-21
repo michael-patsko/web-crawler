@@ -16,6 +16,7 @@ public class WebCrawler {
     private final String rootDomain;
     private final LinkedList<String> urlsToVisit = new LinkedList<>();
     private final Set<String> visitedUrls = new HashSet<>();
+    private final Map<String, String> failedUrls = new HashMap<>();
 
     private String normalizedStartUrl;
     private long startTime;
@@ -31,25 +32,22 @@ public class WebCrawler {
     public void crawl() {
         startUp();
 
-        while (thereAreUrlsToVisitAndProcessHasExceededTimeout()) {
-
+        while (thereAreUrlsToVisitAndProcessHasNotExceededTimeout()) {
             var urlToVisit = urlsToVisit.poll();
 
-            // This shouldn't happen, as we check before adding a new URL to visit, but *just in case*!
-            if (visitedUrls.contains(urlToVisit)) {
+            // This shouldn't happen, as we check before adding a new URL to the queue but *just in case*!
+            if (urlHasBeenVisited(urlToVisit) || urlHasFailedAlready(urlToVisit)) {
                 continue;
             }
-
 
             try {
                 // TODO what happens if this GET fails or times out? Shouldn't add it to visited or try the rest of the loop
                 var document = Jsoup.connect(urlToVisit).timeout(TEN_SECONDS_IN_MILLISECONDS).get();
-
+                addLinksOnPageToQueue(document);
                 visitedUrls.add(urlToVisit);
-
-                getLinksOnPageAndAddThemToQueue(document);
             } catch (Exception e) {
-                // TODO: swallow error for now
+                System.out.println("Failed to visit " + urlToVisit + " because " + e.getMessage());
+                failedUrls.put(urlToVisit, e.getMessage());
             }
 
             // Force only one iteration of while loop, for debugging purposes
@@ -58,10 +56,9 @@ public class WebCrawler {
             }
         }
 
-        System.out.println("Crawling finished!");
-        System.out.println("Visited " + visitedUrls.size() + " distinct URLs");
-        System.out.println("Visited URLs: ");
-        visitedUrls.forEach(System.out::println);
+        finish();
+    }
+
     private void startUp() {
         try {
             normalizedStartUrl = normalizeUrl(startUrl);
@@ -75,12 +72,19 @@ public class WebCrawler {
         startTime = System.currentTimeMillis();
     }
 
-    private boolean thereAreUrlsToVisitAndProcessHasExceededTimeout() {
-        if (urlsToVisit.isEmpty()) return false;
-        return !hasTimedOut();
+    private void finish() {
+        System.out.println("Crawling finished! Visited " + visitedUrls.size() + " distinct URLs:");
+        visitedUrls.forEach(System.out::println);
+        System.out.println("\nFailed to visit URLS: ");
+        failedUrls.forEach((url, failureReason) -> System.out.println(url + ", reason: " + failureReason));
     }
 
-    private boolean hasTimedOut() {
+    private boolean thereAreUrlsToVisitAndProcessHasNotExceededTimeout() {
+        if (urlsToVisit.isEmpty()) return false;
+        return !hasProcessTimedOut();
+    }
+
+    private boolean hasProcessTimedOut() {
         if (System.currentTimeMillis() - startTime > timeoutInMilliseconds) {
             System.out.println("Crawler stopping after running for " + (System.currentTimeMillis() - startTime)/1000  + " seconds");
             return true;
@@ -88,7 +92,7 @@ public class WebCrawler {
         return false;
     }
 
-    private void getLinksOnPageAndAddThemToQueue(Document document) {
+    private void addLinksOnPageToQueue(Document document) {
         var linkElements = document.select("a[href]");
 
         linkElements.forEach(link -> {
@@ -97,11 +101,15 @@ public class WebCrawler {
             try {
                 var normalizedUrl = normalizeUrl(url);
 
-                if (hasRootDomain(normalizedUrl) && !urlsToVisit.contains(normalizedUrl)) {
+                if (hasRootDomain(normalizedUrl)
+                        && !urlIsInQueue(normalizedUrl)
+                        && !urlHasBeenVisited(normalizedUrl)
+                        && !urlHasFailedAlready(normalizedUrl)
+                ) {
                     urlsToVisit.add(normalizedUrl);
                 }
+
             } catch (Exception e) {
-                System.out.println("Could not normalize " + url + " because " + e.getMessage());
                 failedUrls.put(url, e.getMessage());
             }
         });
@@ -111,7 +119,20 @@ public class WebCrawler {
         return URI.create(url).getHost().equals(rootDomain);
     }
 
+    private Boolean urlHasBeenVisited(String url) {
+        return visitedUrls.contains(url);
+    }
+
+    private Boolean urlIsInQueue(String url) {
+        return urlsToVisit.contains(url);
+    }
+
+    private Boolean urlHasFailedAlready(String url) {
+        return failedUrls.containsKey(url);
+    }
+
     private String normalizeUrl(String url) throws URISyntaxException {
+        url = url.replace(" ", "%20"); // Jsoup's absUrl method does some string decoding, annoyingly - this can mess up the path
         var uri = URI.create(url).normalize();
 
         var scheme = uri.getScheme();
@@ -120,7 +141,7 @@ public class WebCrawler {
         }
 
         // Prevents treating example.com and example.com/ as two different URLs
-        var path = uri.getPath();
+        var path = uri.getRawPath();
         if (path == null || path.isEmpty()) {
             path = "/";
         }
