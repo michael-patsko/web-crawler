@@ -1,37 +1,38 @@
 package uk.co.exercise.webcrawler;
 
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.Set;
+import java.util.*;
 
 public class WebCrawler {
 
     private static final Integer TEN_SECONDS_IN_MILLISECONDS = 10 * 1000;
 
     private final String startUrl;
+    private final Integer timeoutInMilliseconds;
     private final String rootDomain;
     private final LinkedList<String> urlsToVisit = new LinkedList<>();
     private final Set<String> visitedUrls = new HashSet<>();
 
-    private final Boolean debugMode = true;
+    private String normalizedStartUrl;
+    private long startTime;
 
-    public WebCrawler(String startUrl) {
+    private final Boolean debugMode = false;
+
+    public WebCrawler(String startUrl, Integer timeoutInSeconds) {
         this.startUrl = startUrl;
+        this.timeoutInMilliseconds = timeoutInSeconds * 1000;
         this.rootDomain = URI.create(startUrl).getHost();
     }
 
     public void crawl() {
-        System.out.println("Crawling URL: " + startUrl);
+        startUp();
 
-        // TODO: Should normalize first
+        while (thereAreUrlsToVisitAndProcessHasExceededTimeout()) {
 
-        urlsToVisit.add(startUrl);
-
-        while (!urlsToVisit.isEmpty()) {
             var urlToVisit = urlsToVisit.poll();
 
             // This shouldn't happen, as we check before adding a new URL to visit, but *just in case*!
@@ -39,29 +40,14 @@ public class WebCrawler {
                 continue;
             }
 
-            System.out.println("Visiting URL: " + urlToVisit);
 
             try {
+                // TODO what happens if this GET fails or times out? Shouldn't add it to visited or try the rest of the loop
                 var document = Jsoup.connect(urlToVisit).timeout(TEN_SECONDS_IN_MILLISECONDS).get();
+
                 visitedUrls.add(urlToVisit);
 
-                var linkElements = document.select("a[href]");
-
-                linkElements.forEach(link -> {
-                    var url = link.absUrl("href");
-
-                    try {
-                        var normalizedUrl = normalizeUrl(url);
-
-                        if (hasRootDomain(url) && !urlsToVisit.contains(normalizedUrl)) {
-                            System.out.println(normalizedUrl);
-                            urlsToVisit.add(normalizedUrl);
-                        }
-                    } catch (URISyntaxException e) {
-                        System.out.println("Oops!");
-                    }
-
-                });
+                getLinksOnPageAndAddThemToQueue(document);
             } catch (Exception e) {
                 // TODO: swallow error for now
             }
@@ -71,6 +57,54 @@ public class WebCrawler {
                 break;
             }
         }
+
+        System.out.println("Crawling finished!");
+        System.out.println("Visited " + visitedUrls.size() + " distinct URLs");
+        System.out.println("Visited URLs: ");
+        visitedUrls.forEach(System.out::println);
+    private void startUp() {
+        try {
+            normalizedStartUrl = normalizeUrl(startUrl);
+        } catch (Exception e) {
+            System.out.println("Starting URL is invalid. Cannot start crawling.");
+        }
+
+        urlsToVisit.add(normalizedStartUrl);
+        System.out.println("Crawling URL: " + normalizedStartUrl);
+
+        startTime = System.currentTimeMillis();
+    }
+
+    private boolean thereAreUrlsToVisitAndProcessHasExceededTimeout() {
+        if (urlsToVisit.isEmpty()) return false;
+        return !hasTimedOut();
+    }
+
+    private boolean hasTimedOut() {
+        if (System.currentTimeMillis() - startTime > timeoutInMilliseconds) {
+            System.out.println("Crawler stopping after running for " + (System.currentTimeMillis() - startTime)/1000  + " seconds");
+            return true;
+        }
+        return false;
+    }
+
+    private void getLinksOnPageAndAddThemToQueue(Document document) {
+        var linkElements = document.select("a[href]");
+
+        linkElements.forEach(link -> {
+            var url = link.absUrl("href");
+
+            try {
+                var normalizedUrl = normalizeUrl(url);
+
+                if (hasRootDomain(normalizedUrl) && !urlsToVisit.contains(normalizedUrl)) {
+                    urlsToVisit.add(normalizedUrl);
+                }
+            } catch (Exception e) {
+                System.out.println("Could not normalize " + url + " because " + e.getMessage());
+                failedUrls.put(url, e.getMessage());
+            }
+        });
     }
 
     private Boolean hasRootDomain(String url) {
@@ -78,7 +112,7 @@ public class WebCrawler {
     }
 
     private String normalizeUrl(String url) throws URISyntaxException {
-        var uri = URI.create(url);
+        var uri = URI.create(url).normalize();
 
         var scheme = uri.getScheme();
         if (scheme == null) {
