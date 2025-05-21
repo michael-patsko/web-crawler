@@ -2,5 +2,5 @@ services:
   webcrawler:
     build:
       context: .
-    command: "https://monzo.com 60"
+    command: "https://monzo.com 30"
 

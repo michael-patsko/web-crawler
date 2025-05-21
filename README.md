@@ -10,11 +10,11 @@
 
 In the project root directory, you can either:
 
-1. run `docker compose up --build` - this will crawl the default page, https://monzo.com, or
-2. run with a specific starting URL like so:
+1. run `docker compose up --build` - this will crawl the default page, https://monzo.com, with a default timeout of 60 seconds, or
+2. run with a specific starting URL and timeout like so:
 ```
 docker build -t web-crawler .
-docker run --rm web-crawler "https://www.example.com/"
+docker run --rm web-crawler "https://www.example.com/" 30
 ```
 
 ## Developer decisions

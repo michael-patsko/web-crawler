@@ -1,7 +1,5 @@
 package uk.co.exercise.webcrawler;
 
-import java.io.IOException;
-
 public class Application {
     public static void main(String[] args) {
         var startUrl = args[0];
