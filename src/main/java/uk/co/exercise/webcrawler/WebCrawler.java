@@ -20,15 +20,16 @@ public class WebCrawler {
     private final LinkedList<String> urlsToVisit = new LinkedList<>();
     private final Set<String> visitedUrls = new HashSet<>();
     private final Map<String, String> failedUrls = new HashMap<>();
+    private final Boolean debugMode;
 
     private String normalizedStartUrl;
     private long startTime;
 
-    private final Boolean debugMode = false;
 
-    public WebCrawler(String startUrl, Integer timeoutInSeconds) {
+    public WebCrawler(String startUrl, Integer timeoutInSeconds, Boolean debugMode) {
         this.startUrl = startUrl;
         this.timeoutInMilliseconds = timeoutInSeconds * 1000;
+        this.debugMode = debugMode;
         this.rootDomain = URI.create(startUrl).getHost();
     }
 
@@ -48,11 +49,6 @@ public class WebCrawler {
             }
 
             visitUrl(urlToVisit);
-
-            // Force only one iteration of while loop, for debugging purposes
-            if (debugMode) {
-                break;
-            }
         }
 
         finish();
