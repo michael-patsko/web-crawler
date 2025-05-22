@@ -1,8 +1,9 @@
 package uk.co.exercise.webcrawler;
 
 import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -32,8 +33,12 @@ public class WebCrawler {
     }
 
     public void crawl() {
-        startUp();
+        if (!canStartUp()) {
+            System.out.println("Cannot start the web crawler.");
+            return;
+        }
 
+        startUp();
         while (thereAreUrlsToVisitAndProcessHasNotExceededTimeout()) {
             var urlToVisit = urlsToVisit.poll();
 
@@ -42,15 +47,7 @@ public class WebCrawler {
                 continue;
             }
 
-            try {
-                // TODO what happens if this GET fails or times out? Shouldn't add it to visited or try the rest of the loop
-                var document = Jsoup.connect(urlToVisit).timeout(TEN_SECONDS_IN_MILLISECONDS).get();
-                addLinksOnPageToQueue(document);
-                visitedUrls.add(urlToVisit);
-            } catch (Exception e) {
-                System.out.println("Failed to visit " + urlToVisit + " because " + e.getMessage());
-                failedUrls.put(urlToVisit, e.getMessage());
-            }
+            visitUrl(urlToVisit);
 
             // Force only one iteration of while loop, for debugging purposes
             if (debugMode) {
@@ -61,14 +58,20 @@ public class WebCrawler {
         finish();
     }
 
-    private void startUp() {
+    private Boolean canStartUp() {
         try {
             normalizedStartUrl = normalizeUrl(startUrl, startUrl);
+            urlsToVisit.add(normalizedStartUrl);
+
         } catch (Exception e) {
             System.out.println("Starting URL is invalid. Cannot start crawling.");
+            return false;
         }
 
-        urlsToVisit.add(normalizedStartUrl);
+        return true;
+    }
+
+    private void startUp() {
         System.out.println("Crawling URL: " + normalizedStartUrl);
         startTime = System.currentTimeMillis();
     }
@@ -76,8 +79,11 @@ public class WebCrawler {
     private void finish() {
         System.out.println("Crawling finished! Visited " + visitedUrls.size() + " distinct URLs:");
         visitedUrls.forEach(System.out::println);
-        System.out.println("\nFailed to visit URLS: ");
-        failedUrls.forEach((url, failureReason) -> System.out.println(url + ", reason: " + failureReason));
+
+        if (debugMode) {
+            System.out.println("\nFailed to visit URLS: ");
+            failedUrls.forEach((url, failureReason) -> System.out.println(url + ", reason: " + failureReason));
+        }
     }
 
     private boolean thereAreUrlsToVisitAndProcessHasNotExceededTimeout() {
@@ -93,28 +99,43 @@ public class WebCrawler {
         return false;
     }
 
-    private void addLinksOnPageToQueue(Document document) {
+    private void visitUrl(String url) {
+        try {
+            addLinksOnPageToQueue(url);
+            visitedUrls.add(url);
+        } catch (Exception e) {
+            if (debugMode) {
+                System.out.println("Failed to visit " + url + " because " + e.getMessage());
+            }
+            failedUrls.put(url, e.getMessage());
+        }
+    }
+
+    private void addLinksOnPageToQueue(String url) throws IOException {
+        var document = Jsoup.connect(url).followRedirects(true).timeout(TEN_SECONDS_IN_MILLISECONDS).get();
         var linkElements = document.select("a[href]");
         var baseUri = document.baseUri();
 
-        linkElements.forEach(link -> {
-            var url = link.absUrl("href");
+        linkElements.forEach(link -> tryToAddLinkToQueueIfValid(link, baseUri));
+    }
 
-            try {
-                var normalizedUrl = normalizeUrl(url, baseUri);
+    private void tryToAddLinkToQueueIfValid(Element link, String baseUri) {
+        var href = link.absUrl("href");
 
-                if (hasRootDomain(normalizedUrl)
-                        && !urlIsInQueue(normalizedUrl)
-                        && !urlHasBeenVisited(normalizedUrl)
-                        && !urlHasFailedAlready(normalizedUrl)
-                ) {
-                    urlsToVisit.add(normalizedUrl);
-                }
+        try {
+            var normalizedUrl = normalizeUrl(href, baseUri);
 
-            } catch (Exception e) {
-                failedUrls.put(url, e.getMessage());
+            if (hasRootDomain(normalizedUrl)
+                    && !urlIsInQueue(normalizedUrl)
+                    && !urlHasBeenVisited(normalizedUrl)
+                    && !urlHasFailedAlready(normalizedUrl)
+            ) {
+                urlsToVisit.add(normalizedUrl);
             }
-        });
+
+        } catch (Exception e) {
+            failedUrls.put(href, e.getMessage());
+        }
     }
 
     private Boolean hasRootDomain(String url) {
