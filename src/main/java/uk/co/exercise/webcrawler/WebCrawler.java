@@ -4,8 +4,10 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
 import java.net.URI;
-import java.net.URISyntaxException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class WebCrawler {
 
@@ -61,14 +63,13 @@ public class WebCrawler {
 
     private void startUp() {
         try {
-            normalizedStartUrl = normalizeUrl(startUrl);
+            normalizedStartUrl = normalizeUrl(startUrl, startUrl);
         } catch (Exception e) {
             System.out.println("Starting URL is invalid. Cannot start crawling.");
         }
 
         urlsToVisit.add(normalizedStartUrl);
         System.out.println("Crawling URL: " + normalizedStartUrl);
-
         startTime = System.currentTimeMillis();
     }
 
@@ -94,12 +95,13 @@ public class WebCrawler {
 
     private void addLinksOnPageToQueue(Document document) {
         var linkElements = document.select("a[href]");
+        var baseUri = document.baseUri();
 
         linkElements.forEach(link -> {
             var url = link.absUrl("href");
 
             try {
-                var normalizedUrl = normalizeUrl(url);
+                var normalizedUrl = normalizeUrl(url, baseUri);
 
                 if (hasRootDomain(normalizedUrl)
                         && !urlIsInQueue(normalizedUrl)
@@ -131,24 +133,47 @@ public class WebCrawler {
         return failedUrls.containsKey(url);
     }
 
-    private String normalizeUrl(String url) throws URISyntaxException {
-        url = url.replace(" ", "%20"); // Jsoup's absUrl method does some string decoding, annoyingly - this can mess up the path
-        var uri = URI.create(url).normalize();
+    private String normalizeUrl(String url, String base) {
+        var baseUri = URI.create(base);
 
-        var scheme = uri.getScheme();
-        if (scheme == null) {
-            scheme = "http";
+        // Get rid of illegal characters in raw href (e.g. spaces)
+        var encodedUrl = fixHrefEncoding(url);
+
+        return baseUri.resolve(encodedUrl).toASCIIString();
+    }
+
+    private String fixHrefEncoding(String url) {
+        try {
+            var uri = URI.create(url);
+
+            return new URI(
+                    uri.getScheme() != null ? uri.getScheme() : "http",
+                    uri.getAuthority(),
+                    encodePath(uri.getPath()),
+                    null,
+                    null
+            ).toASCIIString();
+        } catch (Exception e) {
+            return url.replace(" ", "%20");
         }
+    }
 
+    private String encodePath(String path) {
         // Prevents treating example.com and example.com/ as two different URLs
-        var path = uri.getRawPath();
         if (path == null || path.isEmpty()) {
-            path = "/";
+            return "/";
         }
 
-        var normalizedUri = new URI(scheme, uri.getAuthority(), path, null, null);
-        // We aren't interested in fragment or query
+        // This is an attempt to fix jsoup's encoding/decoding issues of URL paths
+        // Slashes get encoded as %2F and spaces get replaced with +, but should be %20
+        return Arrays.stream(path.split("/"))
+                .map(segment ->
+                    URLEncoder.encode(segment, StandardCharsets.UTF_8)
+                        .replace("+", "%20"))
+                .collect(Collectors.joining("/"));
+    }
 
-        return normalizedUri.toString();
+    private void encodeQuery(String query) {
+        // TODO
     }
 }
