@@ -76,10 +76,24 @@ public class WebCrawler {
         System.out.println("Crawling finished! Visited " + visitedUrls.size() + " distinct URLs:");
         visitedUrls.forEach(System.out::println);
 
-        if (debugMode) {
+        if (!failedUrls.isEmpty()) {
             System.out.println("\nFailed to visit URLS: ");
-            failedUrls.forEach((url, failureReason) -> System.out.println(url + ", reason: " + failureReason));
+
+            if (debugMode) {
+                printFailedUrls();
+            } else {
+                printFailedUrlsWithReason();
+            }
         }
+    }
+
+    private void printFailedUrls() {
+        failedUrls.keySet().forEach(System.out::println);
+    }
+
+    private void printFailedUrlsWithReason() {
+        failedUrls.forEach((url, failureReason) -> System.out.println(url + ", reason: " + failureReason));
+
     }
 
     private boolean thereAreUrlsToVisitAndProcessHasNotExceededTimeout() {
