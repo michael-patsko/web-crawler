@@ -2,9 +2,14 @@
 
 ## Intro
 
+This console application uses a breadth-first search approach to explore all URLs found on the same domain as the starting URL.
+
+Stack:
+
 - Java 21
-- Built with Maven
-- Runs in Docker container
+- Maven
+- Docker
+- [jsoup](https://jsoup.org/)
 
 ## Setup and usage
 
@@ -17,17 +22,20 @@ docker build -t web-crawler .
 docker run --rm web-crawler "https://www.example.com/" 30
 ```
 
-## Developer decisions
-
-### BFS versus DFS
-
 ### Limitations
 
 At the moment:
 
- - only works for static HTML
- - doesn't work with URLs which redirect
+ - Only works for static HTML
+ - Only works with HTTP and HTTPS
+ - Only parses HTML and XML (no PDFs, for instance)
+ - Doesn't work with URLs which redirect
+ - Ignores URL fragments **and query parameters**
+ - Currently no test suite!
 
 ### Future improvements
 
  - Use a headless browser, such as Selenium, to cope with dynamic content
+ - Persist query parameters, so e.g. `/?page=1` and `/?page=2` would be treated as two distinct URLs
+ - Add tests!
+ - Improve file structure, e.g. put common helper methods in `/helpers` folder
